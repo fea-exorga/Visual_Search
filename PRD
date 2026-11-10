@@ -3,8 +3,7 @@ Proposal Reference: Reinforce SST Idea #idea_84e84c6c
 Last Updated (Proposal): November 5, 2026
 PRD Date: November 11, 2026
 Organization: Reinforce AI/ML Club at Scaler School of Technology
-SPG / Squad Name: [SPG / Squad Name]
-Project Contributors: [Team Member Names & GitHub Handles]
+SPG / Squad Name: CrazyBot
 1. Executive Summary & Product Vision
 Zero-Text Multimodal Desktop Search (Idea #idea_84e84c6c) is a local, visual-first "Second Brain" desktop search engine designed to index and retrieve images from unstructured local directories, including messy image folders, lecture screenshots, and meme dumps. Rather than relying on manual file naming or folder hierarchies, the application enables users to search across thousands of local image assets by semantic "vibe" (natural language), rough hand-drawn sketch, dominant color palette, embedded text (OCR), or visual similarity (image-to-image), alongside an interactive 2D/3D embedding galaxy explorer.
 2. Problem Statement & Target Use Cases
@@ -114,7 +113,5 @@ Per the Reinforce Event Registration Guide, teams adopting Idea #idea_84e84c6c s
 
 Charter or Attach SPG: Attach Idea #idea_84e84c6c directly to an active Special Project Group (SPG) or hackathon squad on the Reinforce SST portal, or lock a new squad roster to auto-mint an official SPG.
 Project Deliverables Submission: Submit the following artifacts in the Project Deliverables & Submission section before the event deadline:
-GitHub Repository Link: [GitHub Repository URL]
-Pitch Deck Slides URL: [Pitch Deck URL]
-Live Demo Link: [Live Demo URL]
+GitHub Repository Link: https://github.com/fea-exorga/Visual_Search
 
