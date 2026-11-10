@@ -1,0 +1,120 @@
+Product Requirements Document: Zero-Text Multimodal Desktop Search
+Proposal Reference: Reinforce SST Idea #idea_84e84c6c
+Last Updated (Proposal): November 5, 2026
+PRD Date: November 11, 2026
+Organization: Reinforce AI/ML Club at Scaler School of Technology
+SPG / Squad Name: [SPG / Squad Name]
+Project Contributors: [Team Member Names & GitHub Handles]
+1. Executive Summary & Product Vision
+Zero-Text Multimodal Desktop Search (Idea #idea_84e84c6c) is a local, visual-first "Second Brain" desktop search engine designed to index and retrieve images from unstructured local directories, including messy image folders, lecture screenshots, and meme dumps. Rather than relying on manual file naming or folder hierarchies, the application enables users to search across thousands of local image assets by semantic "vibe" (natural language), rough hand-drawn sketch, dominant color palette, embedded text (OCR), or visual similarity (image-to-image), alongside an interactive 2D/3D embedding galaxy explorer.
+2. Problem Statement & Target Use Cases
+Users accumulate thousands of heterogeneous visual files across local directories—such as lecture slides captured during classes, code screenshots, reference diagrams, design inspiration, and meme dumps—with generic filenames (e.g., IMG_4021.png or Screenshot_2026-11-05.png). Traditional operating system file search fails when filenames lack descriptive metadata or when a user only remembers the visual layout, dominant color scheme, or approximate concept of an image.
+Core User Scenarios
+Semantic & "Vibe" Retrieval: Searching by natural language descriptions of mood, theme, or visual content without requiring exact text matches in filenames.
+Lecture Screenshot & Meme Retrieval: Combining Optical Character Recognition (OCR) with semantic embeddings so users can locate lecture diagrams or memes by either embedded text fragments or visual concepts.
+Sketch-to-Image Querying: Drawing a rough composition or shape on a live sketch-pad to retrieve visually and structurally matching local images.
+Color Palette & Visual Similarity Filtering: Filtering results by dominant color palettes or selecting an existing image to find visually similar assets and near-duplicates.
+Visual Discovery (2D/3D Galaxy Explorer): Navigating the entire local image library spatially in a 2D/3D coordinate projection where visually and semantically related images cluster together automatically.
+3. Prerequisites & Technical Stack
+The system integrates six core technical domains specified in Reinforce SST Idea #idea_84e84c6c:
+
+
+
+Domain / Capability
+Selected Technologies & Frameworks
+Role in System Architecture
+Backend & Indexing Pipeline
+Python
+Asynchronous directory scanning, batch image preprocessing, embedding orchestration, and local API serving.
+Vision-Language Models (VLMs)
+OpenAI CLIP & Google SigLIP
+Contrastive multimodal encoders mapping images, natural language text queries, and sketches into a shared latent vector space.
+Vector Similarity Search
+Meta FAISS
+Local high-speed vector indexing supporting sub-millisecond cross-modal retrieval (text-to-image, image-to-image, and sketch-to-image).
+Dimensionality Reduction & Clustering
+UMAP & scikit-learn t-SNE
+High-dimensional manifold projection into 2D and 3D coordinates grouped by visual theme and semantic vibe.
+Optical Character Recognition (OCR)
+EasyOCR & Tesseract OCR
+Extracting embedded text from lecture screenshots, documents, and memes to power hybrid lexical and semantic search.
+Inference Optimization
+ONNX Runtime & FP16 Quantization
+Accelerating local batch indexing throughput and reducing memory footprint on multi-thousand-image datasets.
+Interactive Frontend & UI
+Web/Desktop UI with 2D/3D Canvas & Sketch-Pad
+Delivering the interactive 2D/3D embedding galaxy explorer, live sketch-pad query tool, color filters, and search interface.
+
+Reference Repositories & Documentation: OpenAI CLIP (Hugging Face CLIP), Google SigLIP, Meta FAISS (FAISS Docs), UMAP (UMAP Usage Guide), scikit-learn t-SNE, EasyOCR, Tesseract OCR, and ONNX Runtime (ONNX Runtime GitHub).
+4. Functional Requirements
+4.1 Local Directory Indexer & Feature Extraction (FR-1)
+Recursive Folder Scanning: Scan user-selected local image directories for common raster formats (PNG, JPEG, WebP) and track file additions, modifications, and deletions.
+Multimodal Embedding Generation: Compute dense vision embeddings for every indexed image using OpenAI CLIP or SigLIP.
+OCR Text Extraction: Extract visible text strings from lecture screenshots, slides, and memes using EasyOCR or Tesseract OCR and store extracted text alongside image metadata.
+Color Palette Heuristics: Compute dominant color palettes and color-space distributions for each image to enable color-based filtering and hybrid ranking.
+4.2 Local Vector Index & Cross-Modal Retrieval (FR-2)
+Sub-Millisecond Vector Retrieval: Index all normalized vision embeddings inside a local FAISS index to achieve sub-millisecond nearest-neighbor search latency.
+Cross-Modal Query Modes:
+Text-to-Image: Encode natural language "vibe" or concept queries via the text encoder of CLIP / SigLIP and retrieve top-k matching images from FAISS.
+Image-to-Image: Query the FAISS index using an existing image's embedding vector to surface visually similar images.
+Sketch-to-Image: Encode user drawings from the live sketch-pad into the shared embedding space and combine with structural/color heuristics for retrieval.
+Hybrid Search Fusion: Combine semantic vector similarity scores (FAISS), OCR text matching (EasyOCR / Tesseract OCR), and dominant color-space heuristics into a unified ranking pipeline.
+4.3 Dimensionality Reduction & Theme Clustering (FR-3)
+2D/3D Coordinate Projection: Project high-dimensional CLIP / SigLIP embeddings into 2D and 3D spatial coordinates using UMAP and t-SNE.
+Visual Theme / Vibe Clustering: Group projected coordinates into thematic clusters so visually and conceptually related assets (e.g., lecture notes, code snippets, memes, landscapes) form distinct neighborhoods.
+4.4 Interactive Frontend & 3D Galaxy Explorer (FR-4)
+2D/3D Embedding Galaxy Explorer: Render an interactive spatial canvas where users can pan, zoom, rotate, and inspect clusters of thousands of images in 2D or 3D space.
+Live Sketch-Pad Query Tool: Provide an interactive drawing canvas allowing users to sketch rough shapes and colors and trigger live sketch-to-image retrieval.
+Semantic & Heuristic Search Filters: Support combined filtering by natural language prompt, OCR keyword match, dominant color swatches, and cluster tags.
+4.5 Batch Performance Optimization & Duplicate Detection (FR-5)
+Quantized Inference Pipeline: Export vision-language models to ONNX Runtime with FP16 quantization to maximize batch indexing throughput on local hardware.
+Duplicate & Near-Duplicate Detection: Identify exact and near-duplicate images using cosine similarity thresholds in the FAISS embedding space and surface them for cleanup or grouping.
+5. Implementation Roadmap & Milestones
+The development schedule follows the 5-milestone structure defined in Reinforce SST Idea #idea_84e84c6c:
+
+
+
+Milestone
+Scope & Key Deliverables
+Core Technologies
+Target Completion
+Milestone 1: Local Directory Indexer
+Build the local folder scanner that ingests images, extracts OCR text, computes dominant color palettes, and generates vision embeddings.
+Python, CLIP, SigLIP, EasyOCR, Tesseract OCR
+TBD (Milestone 1)
+Milestone 2: Local Vector Index
+Set up a local vector database index for sub-millisecond cross-modal retrieval across text-to-image, image-to-image, and sketch-to-image queries.
+Meta FAISS
+TBD (Milestone 2)
+Milestone 3: Manifold Projection & Clustering
+Implement dimensionality reduction and clustering to project the entire image library into 2D/3D coordinates grouped by visual theme and vibe.
+UMAP, scikit-learn t-SNE
+TBD (Milestone 3)
+Milestone 4: Interactive Frontend & Explorer
+Build the UI featuring a 2D/3D embedding galaxy explorer, a live sketch-pad query canvas, and hybrid semantic/color search filters.
+Frontend UI, 2D/3D Canvas, Sketch-Pad
+TBD (Milestone 4)
+Milestone 5: Optimization, Dedup & Demo
+Optimize batch indexing speed with quantized inference, add duplicate detection, and record a live demo on a chaotic multi-thousand-image dataset.
+ONNX Runtime, FP16 Quantization
+TBD (Milestone 5)
+
+6. Performance Targets, Success Criteria & Learning Outcomes
+System Verification Criteria
+Retrieval Latency: Sub-millisecond vector search query execution over the indexed dataset via FAISS.
+Scale Validation: End-to-end indexing, duplicate detection, and interactive 2D/3D visualization verified on a chaotic multi-thousand-image local dataset.
+Cross-Modal Accuracy: Verified retrieval across all four query modalities (natural language vibe, OCR text, live sketch-pad, and dominant color palette / image similarity).
+Core Learning Outcomes
+Contrastive Multimodal Pipelines: Mastering OpenAI CLIP and SigLIP embeddings and end-to-end cross-modal retrieval workflows.
+Vector Indexing & Manifold Visualization: Implementing FAISS indexing alongside high-dimensional projection with UMAP and t-SNE.
+Hybrid Search Architecture: Fusing OCR (EasyOCR / Tesseract OCR), color-space heuristics, and semantic vectors into a unified retrieval engine.
+Local AI Application Delivery: Shipping a quantized (ONNX Runtime), local-first multimodal desktop search engine with an interactive 3D embedding explorer.
+7. Reinforce SST SPG Workflow & Submission Checklist
+Per the Reinforce Event Registration Guide, teams adopting Idea #idea_84e84c6c should complete the following operational steps:
+
+Charter or Attach SPG: Attach Idea #idea_84e84c6c directly to an active Special Project Group (SPG) or hackathon squad on the Reinforce SST portal, or lock a new squad roster to auto-mint an official SPG.
+Project Deliverables Submission: Submit the following artifacts in the Project Deliverables & Submission section before the event deadline:
+GitHub Repository Link: [GitHub Repository URL]
+Pitch Deck Slides URL: [Pitch Deck URL]
+Live Demo Link: [Live Demo URL]
+
