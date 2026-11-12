@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
-from backend.app.config import get_settings
+from ..config import get_settings
 
 # ── SQL DDL ───────────────────────────────────────────────────────────
 

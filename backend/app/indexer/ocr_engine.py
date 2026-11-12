@@ -129,7 +129,6 @@ class OCREngine:
                 "UPDATE images SET status = 'OCR_DONE', updated_at = CURRENT_TIMESTAMP WHERE image_id = ?",
                 (image_id,),
             )
-            db.commit()
 
 
 # ---------------------------------------------------------------------------

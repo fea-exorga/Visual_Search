@@ -171,7 +171,7 @@ class VisionEmbedder:
                     """,
                     (row_id, image_id),
                 )
-            db.commit()
+
 
         logger.info(
             "Saved %d embeddings (rows %d–%d) to %s",

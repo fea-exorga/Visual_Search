@@ -14,10 +14,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Tuple
 
-from PIL import Image
+from PIL import Image, ImageOps
 
-from backend.app.config import get_settings
-from backend.app.db.schema import get_db
+from ..config import get_settings
+from ..db.schema import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,21 @@ def validate_and_prepare_image(file_path: str | Path) -> Tuple[Image.Image, int,
     except Exception as exc:
         raise ValueError(f"Invalid image {file_path}: {exc}") from exc
 
+    # Fix rotated phone photos
+    img = ImageOps.exif_transpose(img)
+
     fmt = (img.format or file_path.suffix.lstrip(".")).upper()
+
+    # Convert RGBA/P to RGB (composite over white background)
+    if img.mode in ("RGBA", "LA", "PA", "P"):
+        background = Image.new("RGB", img.size, (255, 255, 255))
+        if img.mode == "P":
+            img = img.convert("RGBA")
+        background.paste(img, mask=img.split()[-1] if "A" in img.mode else None)
+        img = background
+    elif img.mode != "RGB":
+        img = img.convert("RGB")
+
     return img, img.width, img.height, fmt
 
 
@@ -187,6 +201,27 @@ def generate_thumbnail(image: Image.Image, image_id: int) -> Path:
 
 # ── Directory scanner ─────────────────────────────────────────────────
 
+
+def _scandir_recursive(
+    root: Path, extensions: frozenset[str],
+) -> List[str]:
+    """Recursively discover image files using os.scandir(), skipping hidden dirs."""
+    result: List[str] = []
+    try:
+        with os.scandir(root) as it:
+            for entry in it:
+                if entry.name.startswith("."):
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    result.extend(_scandir_recursive(Path(entry.path), extensions))
+                elif entry.is_file(follow_symlinks=True):
+                    if Path(entry.name).suffix.lower() in extensions:
+                        result.append(str(Path(entry.path).resolve()))
+    except PermissionError:
+        logger.warning("Permission denied: %s", root)
+    return result
+
+
 def scan_directory(folder_path: str | Path, folder_id: int) -> List[int]:
     """
     Walk *folder_path*, discover supported images, and upsert them into the
@@ -212,101 +247,95 @@ def scan_directory(folder_path: str | Path, folder_id: int) -> List[int]:
         logger.error("Folder does not exist: %s", folder_path)
         return new_ids
 
-    discovered_paths: set[str] = set()
+    discovered_paths = _scandir_recursive(folder_path, settings.SUPPORTED_EXTENSIONS)
 
-    for root, _dirs, files in os.walk(folder_path):
-        for fname in files:
-            fpath = Path(root) / fname
-            if fpath.suffix.lower() not in settings.SUPPORTED_EXTENSIONS:
+    for abs_path in discovered_paths:
+        fpath = Path(abs_path)
+
+        try:
+            stat = fpath.stat()
+        except OSError as exc:
+            logger.warning("Cannot stat %s: %s", fpath, exc)
+            continue
+
+        file_size = stat.st_size
+        mtime_ns = stat.st_mtime_ns
+
+        with get_db() as conn:
+            existing = conn.execute(
+                "SELECT image_id, file_size, mtime_ns FROM images WHERE file_path = ?",
+                (abs_path,),
+            ).fetchone()
+
+            if existing and not check_delta(abs_path, existing["file_size"], existing["mtime_ns"]):
+                # File unchanged — skip
                 continue
 
-            abs_path = str(fpath.resolve())
-            discovered_paths.add(abs_path)
-
+            # Validate
             try:
-                stat = fpath.stat()
-            except OSError as exc:
-                logger.warning("Cannot stat %s: %s", fpath, exc)
-                continue
-
-            file_size = stat.st_size
-            mtime_ns = stat.st_mtime_ns
-
-            with get_db() as conn:
-                existing = conn.execute(
-                    "SELECT image_id, file_size, mtime_ns FROM images WHERE file_path = ?",
-                    (abs_path,),
-                ).fetchone()
-
-                if existing and not check_delta(abs_path, existing["file_size"], existing["mtime_ns"]):
-                    # File unchanged — skip
-                    continue
-
-                # Validate
-                try:
-                    img, width, height, fmt = validate_and_prepare_image(fpath)
-                except ValueError as exc:
-                    logger.warning("Skipping invalid image %s: %s", fpath, exc)
-                    if existing:
-                        conn.execute(
-                            """
-                            UPDATE images
-                            SET status = 'ERROR', error_message = ?,
-                                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                            WHERE image_id = ?
-                            """,
-                            (str(exc), existing["image_id"]),
-                        )
-                    continue
-
-                sha256 = compute_sha256(fpath)
-
+                img, width, height, fmt = validate_and_prepare_image(fpath)
+            except ValueError as exc:
+                logger.warning("Skipping invalid image %s: %s", fpath, exc)
                 if existing:
-                    image_id = existing["image_id"]
                     conn.execute(
                         """
                         UPDATE images
-                        SET sha256 = ?, width = ?, height = ?, file_size = ?,
-                            mtime_ns = ?, format = ?, status = 'PENDING',
-                            error_message = NULL,
+                        SET status = 'ERROR', error_message = ?,
                             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                         WHERE image_id = ?
                         """,
-                        (sha256, width, height, file_size, mtime_ns, fmt, image_id),
+                        (str(exc), existing["image_id"]),
                     )
-                else:
-                    cur = conn.execute(
-                        """
-                        INSERT INTO images
-                            (file_path, folder_id, sha256, width, height,
-                             file_size, mtime_ns, format)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (abs_path, folder_id, sha256, width, height,
-                         file_size, mtime_ns, fmt),
-                    )
-                    image_id = cur.lastrowid
+                continue
 
-                # Try dedup by hash
-                donor = get_or_link_by_hash(sha256, image_id)
-                if donor is not None:
-                    logger.info(
-                        "Image %d linked to duplicate donor %d", image_id, donor
-                    )
+            sha256 = compute_sha256(fpath)
 
-                # Generate thumbnail
-                try:
-                    generate_thumbnail(img, image_id)
-                except Exception as exc:
-                    logger.warning("Thumbnail failed for %s: %s", fpath, exc)
+            if existing:
+                image_id = existing["image_id"]
+                conn.execute(
+                    """
+                    UPDATE images
+                    SET sha256 = ?, width = ?, height = ?, file_size = ?,
+                        mtime_ns = ?, format = ?, status = 'PENDING',
+                        error_message = NULL,
+                        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                    WHERE image_id = ?
+                    """,
+                    (sha256, width, height, file_size, mtime_ns, fmt, image_id),
+                )
+            else:
+                cur = conn.execute(
+                    """
+                    INSERT INTO images
+                        (file_path, folder_id, sha256, width, height,
+                         file_size, mtime_ns, format)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (abs_path, folder_id, sha256, width, height,
+                     file_size, mtime_ns, fmt),
+                )
+                image_id = cur.lastrowid
 
-                # If still PENDING after hash-link check, it needs processing
-                row = conn.execute(
-                    "SELECT status FROM images WHERE image_id = ?",
-                    (image_id,),
-                ).fetchone()
-                if row and row["status"] == "PENDING":
-                    new_ids.append(image_id)
+            # Try dedup by hash
+            donor = get_or_link_by_hash(sha256, image_id)
+            if donor is not None:
+                logger.info(
+                    "Image %d linked to duplicate donor %d", image_id, donor
+                )
+
+            # Generate thumbnail
+            try:
+                generate_thumbnail(img, image_id)
+            except Exception as exc:
+                logger.warning("Thumbnail failed for %s: %s", fpath, exc)
+
+            # If still PENDING after hash-link check, it needs processing
+            row = conn.execute(
+                "SELECT status FROM images WHERE image_id = ?",
+                (image_id,),
+            ).fetchone()
+            if row and row["status"] == "PENDING":
+                new_ids.append(image_id)
 
     # Update last_scan_at on the folder
     with get_db() as conn:

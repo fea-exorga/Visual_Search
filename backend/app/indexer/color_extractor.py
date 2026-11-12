@@ -108,4 +108,3 @@ def save_color_palette(image_id: int, palette: list[dict]) -> None:
             "UPDATE images SET status = 'COLOR_DONE', updated_at = CURRENT_TIMESTAMP WHERE image_id = ?",
             (image_id,),
         )
-        db.commit()
