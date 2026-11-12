@@ -296,12 +296,13 @@ def list_images(
             img = dict(r)
             iid = img["image_id"]
 
-            # Palette preview (top 3 colors)
+            # Dominant colors (top 5 for proportional bar)
             colors = conn.execute(
-                "SELECT hex_code, weight FROM image_colors WHERE image_id = ? ORDER BY rank LIMIT 3",
+                "SELECT rank, hex_code, r, g, b, weight FROM image_colors WHERE image_id = ? ORDER BY rank",
                 (iid,),
             ).fetchall()
-            img["palette_preview"] = [dict(c) for c in colors]
+            img["colors"] = [dict(c) for c in colors]
+            img["palette_preview"] = [dict(c) for c in colors[:3]]
 
             # OCR snippet
             ocr_text = img.pop("ocr_text", None) or ""
@@ -343,7 +344,12 @@ def get_image_detail(image_id: int):
         img["ocr"] = dict(ocr) if ocr else None
 
         # Embedding info
-        img["has_embedding"] = img.get("embedding_row_id") is not None
+        settings = get_settings()
+        has_emb = img.get("embedding_row_id") is not None
+        img["has_embedding"] = has_emb
+        img["embedding_dim"] = settings.EMBEDDING_DIM if has_emb else None
+        img["model_name"] = "google/siglip-base-patch16-224" if has_emb else None
+        img["l2_norm"] = 1.0 if has_emb else None
         img["thumbnail_url"] = f"/api/v1/thumbnails/{image_id}"
 
     return img

@@ -7,10 +7,15 @@ Directories are created on first access via get_settings().
 from __future__ import annotations
 
 import os
-import torch
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import FrozenSet
+
+try:
+    import torch
+    _CUDA_AVAILABLE = torch.cuda.is_available()
+except ImportError:
+    _CUDA_AVAILABLE = False
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent  # backend/../..
 
@@ -53,7 +58,7 @@ class Settings:
         object.__setattr__(
             self,
             "EMBEDDING_BATCH_SIZE",
-            32 if torch.cuda.is_available() else 8,
+            32 if _CUDA_AVAILABLE else 8,
         )
 
         # Ensure required directories exist

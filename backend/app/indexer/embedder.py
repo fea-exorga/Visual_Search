@@ -94,9 +94,11 @@ class VisionEmbedder:
         with torch.inference_mode():
             outputs = self._model(**inputs)
 
-        # Use pooler_output if available, otherwise mean-pool last_hidden_state
+        # Use pooler_output or image_embeds if available, otherwise mean-pool last_hidden_state
         if hasattr(outputs, "pooler_output") and outputs.pooler_output is not None:
             vec = outputs.pooler_output[0].cpu().numpy()
+        elif hasattr(outputs, "image_embeds") and outputs.image_embeds is not None:
+            vec = outputs.image_embeds[0].cpu().numpy()
         else:
             vec = outputs.last_hidden_state.mean(dim=1)[0].cpu().numpy()
 
@@ -124,6 +126,8 @@ class VisionEmbedder:
 
         if hasattr(outputs, "pooler_output") and outputs.pooler_output is not None:
             vecs = outputs.pooler_output.cpu().numpy()
+        elif hasattr(outputs, "image_embeds") and outputs.image_embeds is not None:
+            vecs = outputs.image_embeds.cpu().numpy()
         else:
             vecs = outputs.last_hidden_state.mean(dim=1).cpu().numpy()
 

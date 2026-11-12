@@ -48,7 +48,9 @@ def extract_color_palette(image: Image.Image, n_colors: int = 5) -> list[dict]:
     for idx in range(n_colors):
         count = int(np.sum(labels == idx))
         weight = count / total_pixels
-        r, g, b = int(round(centers[idx][0])), int(round(centers[idx][1])), int(round(centers[idx][2]))
+        r = max(0, min(255, int(round(centers[idx][0]))))
+        g = max(0, min(255, int(round(centers[idx][1]))))
+        b = max(0, min(255, int(round(centers[idx][2]))))
         cluster_info.append({
             "r": r,
             "g": g,

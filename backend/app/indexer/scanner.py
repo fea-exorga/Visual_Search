@@ -14,7 +14,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Tuple
 
-from PIL import Image, ImageOps
+try:
+    from PIL import Image, ImageOps
+except ImportError:
+    Image = None  # type: ignore
+    ImageOps = None  # type: ignore
 
 from ..config import get_settings
 from ..db.schema import get_db
