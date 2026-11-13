@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shutil
 
@@ -23,6 +24,11 @@ logger = logging.getLogger(__name__)
 
 _EMPTY = {"raw_text": "", "mean_confidence": 0.0, "word_count": 0}
 _MAX_SIDE = 1600  # downscale huge screenshots before OCR
+_TESSERACT_TIMEOUT_S = 30  # one pathological image must not stall indexing
+
+# Tesseract's OpenMP threads oversubscribe the CPU when several OCR calls run
+# in parallel (the indexer's thread pool); one thread per call is fastest.
+os.environ.setdefault("OMP_THREAD_LIMIT", "1")
 
 
 def _normalise(text: str) -> str:
@@ -59,7 +65,8 @@ class OCREngine:
         import pytesseract
 
         gray = ImageOps.grayscale(img)
-        data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT, config="--psm 3")
+        data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT, config="--psm 3",
+                                         timeout=_TESSERACT_TIMEOUT_S)
         words, confs = [], []
         for text, conf in zip(data["text"], data["conf"]):
             conf = float(conf)

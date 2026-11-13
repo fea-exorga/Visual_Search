@@ -223,3 +223,11 @@ def test_galaxy_stale_after_new_folder(indexed_client, tmp_path):
 
     fresh = c.post("/api/v1/galaxy/compute", json={"method": "pca", "dims": 2}).json()
     assert fresh["stale"] is False and len(fresh["points"]) == 30
+
+
+def test_distinctive_keywords_skip_library_wide_filler():
+    from app.projection.labels import distinctive_keywords
+    texts = ["works gradient loss", "works gradient", "works gradient", "works pizza menu",
+             "works pizza", "works pizza"]
+    labels = np.array([0, 0, 0, 1, 1, 1])
+    assert distinctive_keywords(texts, labels, 2) == ["gradient", "pizza"]

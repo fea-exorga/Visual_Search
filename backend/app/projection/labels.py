@@ -101,6 +101,40 @@ def top_keyword(texts: Iterable[str | None]) -> str | None:
     return min(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0]
 
 
+def _words(text: str | None) -> set[str]:
+    if not text:
+        return set()
+    return {w for w in re.findall(r"[^\W\d_]{4,}", text.lower()) if w not in STOPWORDS}
+
+
+def distinctive_keywords(texts: Sequence[str | None], labels: np.ndarray, k: int,
+                         min_share: float = 0.15, min_docs: int = 2, min_lift: float = 2.0) -> list[str | None]:
+    """One OCR keyword per cluster that is common *in* it but rare elsewhere.
+
+    A word qualifies when it appears in at least ``min_share`` of the cluster's
+    images (and ``min_docs`` of them) and is ``min_lift``× more frequent there
+    than in the whole library. This rejects filler words ("works", "self")
+    that a raw frequency count would pick for every text-heavy cluster.
+    """
+    doc_words = [_words(t) for t in texts]
+    n = len(doc_words)
+    global_df: Counter[str] = Counter(w for ws in doc_words for w in ws)
+    out: list[str | None] = []
+    for c in range(k):
+        members = [ws for ws, lab in zip(doc_words, labels) if lab == c]
+        df: Counter[str] = Counter(w for ws in members for w in ws)
+        best, best_score = None, 0.0
+        for w, cnt in df.items():
+            share = cnt / max(len(members), 1)
+            lift = share / (global_df[w] / n)
+            if cnt >= min_docs and share >= min_share and lift >= min_lift:
+                score = share * np.log(lift)
+                if score > best_score or (score == best_score and best is not None and w < best):
+                    best, best_score = w, score
+        out.append(best)
+    return out
+
+
 def assign_labels(centroids: np.ndarray, vocab_emb: np.ndarray,
                   vocabulary: Sequence[str] = VIBE_VOCABULARY) -> list[str]:
     """Greedy unique assignment of vocabulary entries to cluster centroids.
@@ -143,8 +177,7 @@ def label_clusters(mat: np.ndarray, labels: np.ndarray, encoder,
     centroids = np.stack([np.asarray(mat[labels == c], dtype=np.float32).mean(axis=0) for c in range(k)])
     names = assign_labels(centroids, vocabulary_embeddings(encoder, vocabulary), vocabulary)
     if ocr_texts is not None:
-        for c in range(k):
-            kw = top_keyword(t for t, lab in zip(ocr_texts, labels) if lab == c)
+        for c, kw in enumerate(distinctive_keywords(list(ocr_texts), labels, k)):
             if kw:
                 names[c] = f"{names[c]} · {kw}"
     return names

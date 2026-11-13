@@ -87,7 +87,9 @@ Every milestone has a GitHub label `milestone-N` and a tracking issue.
 ### `milestone-5` — Optimisation, Dedup & Demo
 * ONNX precision switch (fp32 / fp16 / int8), batched + pipelined indexing
   (thread-pool decode/colour/OCR overlapping with batch encode), benchmark script.
-* Duplicate detection: exact (SHA-256), near (pHash Hamming ≤ 6 **or** cosine ≥ 0.95 via FAISS range search), grouped with union-find.
+* Duplicate detection: exact (SHA-256), near candidates (pHash Hamming ≤ 6 **or** CLIP cosine ≥ 0.88 via FAISS range search),
+  each near candidate **verified on thumbnails** (colour + crop-tolerant correlation), grouped with union-find.
+  Raw cosine ≥ 0.95 alone was measured to merge 2,182/3,000 images (slides of one deck look alike to CLIP), hence verification.
 * `scripts/make_chaos_dataset.py`: ≥ 3,000 synthetic "chaotic" images
   (slides with text, memes with captions, photos-like gradients, sketches, screenshots,
   resized/re-encoded duplicates).
@@ -160,7 +162,7 @@ GET  /galaxy?method=umap|tsne&dims=2|3                               (M3)
 POST /galaxy/compute  body {method="umap", dims=2, n_neighbors?, min_dist?, perplexity?, n_clusters?}
   → same payload as GET (synchronous; fast enough for ~10k points)
 
-GET  /duplicates?threshold=0.95&max_hamming=6                         (M5)
+GET  /duplicates?threshold=0.95&max_hamming=6[&folder_id=]           (M5)
   → { groups: [{ group_id, kind: "exact"|"near",
                  images: [{image_id, file_path, thumbnail_url, file_size, width, height, similarity}] }],
       n_groups, n_images }
@@ -182,7 +184,17 @@ on disjoint files**:
 Orchestrator then integrates: full test suite, real-model end-to-end run on the
 chaos dataset, Playwright screenshots, README, commit & push.
 
-## 8. Success metrics
+## 8. Results (measured — see docs/BENCHMARKS.md)
+
+| Target | Result |
+|---|---|
+| FAISS < 1 ms p50 on 5k | **0.41 ms** p50 (HNSW at 60k: 0.34 ms, recall@10 0.983) |
+| Text query precision@10 (8 vibe queries, chaos set) | 0.9–1.0 on all 8 |
+| Dedup recall ≥ 0.9 | **0.953** (exact 1.0, near 0.907) |
+| Galaxy clusters vs ground-truth category | 19 clusters, purity 0.998 |
+| Indexing, 3,000 images, OCR on, 4-CPU laptop-class | 9.6 img/s (pipelined, 2.6× the sequential baseline) |
+
+## 9. Success metrics
 
 | Metric | Target |
 |---|---|

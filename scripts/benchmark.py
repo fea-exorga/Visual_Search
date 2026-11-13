@@ -387,7 +387,8 @@ def render(info: dict, enc: dict | None, idx: list[dict], fa: dict | None, args,
         L += ["", f"Fastest image encoder on this CPU: **{best}** "
               f"({r[best]['img_per_s_model'] / r['fp32']['img_per_s_model']:.2f}× fp32). "
               "fp16 has no fast kernels on x86 CPUs (ONNX Runtime inserts casts), so it is mainly useful "
-              "for GPU / disk size; int8 (dynamic quantisation) is the recommended CPU default.", ""]
+              "for GPU / disk size. int8 (dynamic quantisation) is fast but lossy — compare its cosine / top-10 "
+              "agreement with fp32 above before choosing it.", ""]
     if idx:
         L += ["## 2. Full indexing throughput", "",
               f"`IndexWorker` on a fresh `SEARCH_DATA_DIR` over {args.n_index} files copied from the dataset "
