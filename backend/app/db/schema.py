@@ -99,6 +99,17 @@ CREATE TABLE IF NOT EXISTS image_embeddings (
     updated_at  TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
+-- One row per computed galaxy (method, dims): provenance + staleness check.
+CREATE TABLE IF NOT EXISTS galaxy_runs (
+    method       TEXT    NOT NULL,
+    dims         INTEGER NOT NULL,
+    model        TEXT,
+    n_points     INTEGER NOT NULL,
+    params       TEXT,
+    computed_at  TEXT    NOT NULL,
+    PRIMARY KEY (method, dims)
+);
+
 -- Perceptual hashes for exact / near duplicate detection (Milestone 5).
 CREATE TABLE IF NOT EXISTS image_hashes (
     image_id    INTEGER PRIMARY KEY REFERENCES images(image_id) ON DELETE CASCADE,
