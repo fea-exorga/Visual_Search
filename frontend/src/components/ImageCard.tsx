@@ -31,11 +31,11 @@ export default function ImageCard({ image, onClick, isSelected }: ImageCardProps
     <button
       onClick={onClick}
       title={filenameFromPath(image.file_path)}
-      className={`group relative flex flex-col overflow-hidden rounded-xl border transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-black/30 ${
+      className={`group relative flex flex-col overflow-hidden rounded-xl border transition duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-indigo-950/50 ${
         isSelected
-          ? 'border-indigo-500 ring-2 ring-indigo-500/40'
-          : 'border-slate-700/50 hover:border-slate-600'
-      } bg-slate-800`}
+          ? 'border-indigo-400 ring-2 ring-indigo-500/40'
+          : 'border-slate-800 hover:border-slate-600'
+      } bg-slate-900/80`}
     >
       {/* Thumbnail */}
       <div className="relative aspect-square w-full overflow-hidden bg-slate-900">
@@ -53,7 +53,7 @@ export default function ImageCard({ image, onClick, isSelected }: ImageCardProps
 
         {/* OCR badge top-right */}
         {hasOcr && (
-          <span className="absolute right-2 top-2 rounded-full bg-blue-600/80 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+          <span className="absolute right-2 top-2 rounded-full bg-indigo-600/80 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
             OCR ✓ {wordCount}w
           </span>
         )}

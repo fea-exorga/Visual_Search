@@ -9,19 +9,19 @@ import {
   Hash,
   Box,
   AlertTriangle,
+  Copy as CopyIcon,
+  Orbit,
 } from 'lucide-react';
 import { getImageDetail, thumbnailUrl } from '../hooks/useApi';
-import type { ImageDetail, ColorSwatch } from '../types';
+import { formatBytes } from '../lib/format';
+import { ErrorState } from './ui/States';
+import type { ColorSwatch } from '../types';
 
 interface InspectorDrawerProps {
   imageId: number | null;
   onClose: () => void;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  onFindSimilar: (imageId: number) => void;
+  onShowInGalaxy: (imageId: number) => void;
 }
 
 function confidenceColor(conf: number): string {
@@ -85,10 +85,10 @@ function SwatchRow({ swatch, isSelected, onClick }: { swatch: ColorSwatch; isSel
   );
 }
 
-export default function InspectorDrawer({ imageId, onClose }: InspectorDrawerProps) {
+export default function InspectorDrawer({ imageId, onClose, onFindSimilar, onShowInGalaxy }: InspectorDrawerProps) {
   const [selectedSwatch, setSelectedSwatch] = useState<number | null>(null);
 
-  const { data: detail, isLoading } = useQuery({
+  const { data: detail, isLoading, isError, error } = useQuery({
     queryKey: ['imageDetail', imageId],
     queryFn: () => getImageDetail(imageId!),
     enabled: imageId !== null,
@@ -99,12 +99,17 @@ export default function InspectorDrawer({ imageId, onClose }: InspectorDrawerPro
   const filename = detail?.file_path.split('/').pop() || '';
 
   return (
-    <div className="flex h-full w-[340px] min-w-[340px] flex-col border-l border-slate-700/60 bg-slate-900 max-lg:hidden">
+    <aside
+      aria-label="Image inspector"
+      className="absolute inset-y-0 right-0 z-30 flex w-[340px] flex-col border-l border-slate-700/60 bg-slate-900/95 shadow-2xl shadow-black/60 backdrop-blur-md 2xl:relative 2xl:z-auto 2xl:shrink-0 2xl:bg-slate-900/80 2xl:shadow-none"
+    >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-700/40 px-4 py-3">
         <h3 className="text-sm font-semibold text-slate-200">Inspector</h3>
         <button
           onClick={onClose}
+          aria-label="Close inspector (Esc)"
+          title="Close (Esc)"
           className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
         >
           <X className="h-4 w-4" />
@@ -118,12 +123,22 @@ export default function InspectorDrawer({ imageId, onClose }: InspectorDrawerPro
       ) : detail ? (
         <div className="flex-1 overflow-y-auto">
           {/* Preview */}
-          <div className="aspect-video w-full overflow-hidden bg-slate-950">
+          <div className="checker aspect-video w-full overflow-hidden bg-slate-950">
             <img
               src={thumbnailUrl(detail.image_id)}
               alt={filename}
               className="h-full w-full object-contain"
             />
+          </div>
+
+          {/* Actions */}
+          <div className="grid grid-cols-2 gap-2 border-b border-slate-800 px-4 py-3">
+            <button onClick={() => onFindSimilar(detail.image_id)} className="btn-primary px-2" disabled={detail.has_embedding === false}>
+              <CopyIcon className="h-3.5 w-3.5" /> Find similar
+            </button>
+            <button onClick={() => onShowInGalaxy(detail.image_id)} className="btn-secondary px-2" disabled={detail.has_embedding === false}>
+              <Orbit className="h-3.5 w-3.5" /> Show in galaxy
+            </button>
           </div>
 
           {/* Section A — File & Hash Metadata */}
@@ -134,7 +149,11 @@ export default function InspectorDrawer({ imageId, onClose }: InspectorDrawerPro
                 File Metadata
               </h4>
             </div>
-            <p className="truncate text-sm font-medium text-slate-200">{filename}</p>
+            <p className="truncate text-sm font-medium text-slate-200" title={filename}>{filename}</p>
+            <div className="mt-1 flex items-start gap-2">
+              <p className="min-w-0 flex-1 break-all font-mono text-[10px] leading-snug text-slate-500">{detail.file_path}</p>
+              <CopyButton text={detail.file_path} />
+            </div>
             <div className="mt-2 grid grid-cols-2 gap-y-1 text-xs">
               <span className="text-slate-500">Dimensions</span>
               <span className="text-slate-300">
@@ -208,7 +227,7 @@ export default function InspectorDrawer({ imageId, onClose }: InspectorDrawerPro
                   Extracted Text
                 </h4>
               </div>
-              {detail.ocr && (
+              {detail.ocr && detail.ocr.word_count > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-slate-500">
                     {detail.ocr.word_count} words
@@ -250,11 +269,11 @@ export default function InspectorDrawer({ imageId, onClose }: InspectorDrawerPro
             <div className="grid grid-cols-2 gap-y-1 text-xs">
               <span className="text-slate-500">Model</span>
               <span className="truncate text-slate-300">
-                {detail.model_name || 'google/siglip-base-patch16-224'}
+                {detail.model_name || '—'}
               </span>
               <span className="text-slate-500">Dimensions</span>
               <span className="text-slate-300">
-                {detail.embedding_dim ?? 768}-d float32
+                {detail.embedding_dim != null ? `${detail.embedding_dim}-d float32` : '—'}
               </span>
               <span className="text-slate-500">L2 Norm</span>
               <span className="flex items-center gap-1 text-slate-300">
@@ -263,15 +282,11 @@ export default function InspectorDrawer({ imageId, onClose }: InspectorDrawerPro
                   <Check className="h-3 w-3 text-emerald-500" />
                 )}
               </span>
-              <span className="text-slate-500">Row ID</span>
-              <span className="text-slate-300">
-                {detail.embedding_row_id != null
-                  ? `Row #${detail.embedding_row_id}`
-                  : '—'}
-              </span>
+              <span className="text-slate-500">Image ID</span>
+              <span className="text-slate-300">#{detail.image_id}</span>
             </div>
             <div className="mt-2">
-              {detail.status === 'COMPLETED' ? (
+              {detail.status === 'COMPLETED' && detail.has_embedding !== false ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-900/60 px-2.5 py-0.5 text-xs font-medium text-emerald-400">
                   <Check className="h-3 w-3" />
                   Indexed
@@ -279,13 +294,15 @@ export default function InspectorDrawer({ imageId, onClose }: InspectorDrawerPro
               ) : (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-900/60 px-2.5 py-0.5 text-xs font-medium text-amber-400">
                   <AlertTriangle className="h-3 w-3" />
-                  Pending
+                  {detail.status === 'ERROR' ? 'Error' : detail.has_embedding === false ? 'No embedding' : 'Pending'}
                 </span>
               )}
             </div>
           </div>
         </div>
+      ) : isError ? (
+        <ErrorState error={error} />
       ) : null}
-    </div>
+    </aside>
   );
 }

@@ -1,25 +1,17 @@
 import React from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  Play,
-  Pause,
-  RotateCcw,
-  Zap,
-  Clock,
-  ImageIcon,
-  FolderOpen,
-} from 'lucide-react';
-import { getStats, getFolders, startIndex, pauseIndex, resumeIndex } from '../hooks/useApi';
-import { useSSE } from '../hooks/useSSE';
+import { useQuery } from '@tanstack/react-query';
+import { Play, Pause, RotateCcw, Zap, Clock, ImageIcon, FolderOpen, HardDrive } from 'lucide-react';
+import { getStats } from '../hooks/useApi';
+import type { IndexingState } from '../hooks/useIndexing';
+import { formatBytes } from '../lib/format';
 import ImageGrid from './ImageGrid';
-import type { ImageSummary, IndexProgress } from '../types';
+import type { IndexProgress } from '../types';
 
 interface CenterPanelProps {
   folderId: number | null;
   selectedImageId: number | null;
-  onSelectImage: (image: ImageSummary) => void;
-  jobId: string | null;
-  onJobStarted: (jobId: string) => void;
+  onSelectImage: (imageId: number) => void;
+  indexing: IndexingState;
 }
 
 function formatEta(sec: number | null | undefined): string {
@@ -30,168 +22,98 @@ function formatEta(sec: number | null | undefined): string {
 }
 
 function progressStages(p: IndexProgress | null) {
-  if (!p || p.total === 0) {
-    return [
-      { label: '1. File Scan', pct: 0 },
-      { label: '2. Color Palette', pct: 0 },
-      { label: '3. OCR Text', pct: 0 },
-      { label: '4. Vision Embeddings', pct: 0 },
-    ];
-  }
-  const t = p.total;
+  const t = p?.total || 0;
+  const pc = (v: number) => (t ? Math.round((v / t) * 100) : 0);
   return [
-    { label: '1. File Scan', pct: Math.round((p.scanned / t) * 100) },
-    { label: '2. Color Palette', pct: Math.round((p.color_done / t) * 100) },
-    { label: '3. OCR Text', pct: Math.round((p.ocr_done / t) * 100) },
-    { label: '4. Vision Embeddings', pct: Math.round((p.embedded / t) * 100) },
+    { label: 'Scan', pct: pc(p?.scanned ?? 0) },
+    { label: 'Palette', pct: pc(p?.color_done ?? 0) },
+    { label: 'OCR', pct: pc(p?.ocr_done ?? 0) },
+    { label: 'Embeddings', pct: pc(p?.embedded ?? 0) },
   ];
 }
 
-export default function CenterPanel({
-  folderId,
-  selectedImageId,
-  onSelectImage,
-  jobId,
-  onJobStarted,
-}: CenterPanelProps) {
-  const queryClient = useQueryClient();
-
-  const { data: stats } = useQuery({
-    queryKey: ['stats'],
-    queryFn: getStats,
-    refetchInterval: 10000,
-  });
-
-  const { data: folders = [] } = useQuery({
-    queryKey: ['folders'],
-    queryFn: getFolders,
-    refetchInterval: 5000,
-  });
-
-  const { progress, isConnected } = useSSE(jobId);
-  const isRunning = jobId !== null && isConnected;
-
-  const startMutation = useMutation({
-    mutationFn: (forceReindex: boolean) => {
-      const folderIds = folders.map((f) => f.folder_id);
-      return startIndex(folderIds, forceReindex);
-    },
-    onSuccess: (data) => {
-      onJobStarted(data.job_id);
-      queryClient.invalidateQueries({ queryKey: ['folders'] });
-    },
-  });
-
-  const pauseMutation = useMutation({
-    mutationFn: () => pauseIndex(jobId!),
-  });
-
-  const resumeMutation = useMutation({
-    mutationFn: () => resumeIndex(jobId!),
-  });
-
-  const stages = progressStages(progress);
+/** Library view: pipeline status banner + paginated grid of every indexed image. */
+export default function CenterPanel({ folderId, selectedImageId, onSelectImage, indexing }: CenterPanelProps) {
+  const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: getStats, refetchInterval: 10000 });
+  const { progress, isRunning } = indexing;
+  // idle: show overall completion from /stats instead of an empty pipeline
+  const idleProgress: IndexProgress | null =
+    !progress && stats && stats.total_images
+      ? (() => {
+          const done = stats.by_status?.COMPLETED ?? 0;
+          return { scanned: stats.total_images, color_done: done, ocr_done: done, embedded: done, skipped: 0, failed: 0, total: stats.total_images, stage: 'idle', eta_sec: null, images_per_sec: null };
+        })()
+      : null;
+  const stages = progressStages(progress ?? idleProgress);
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto">
-      {/* Pipeline Status Banner */}
-      <div className="sticky top-0 z-10 border-b border-slate-700/40 bg-slate-950/95 px-6 py-4 backdrop-blur-sm">
-        {/* Progress bar */}
-        <div className="mb-3 flex items-center gap-1">
-          {stages.map((stage, i) => (
-            <React.Fragment key={stage.label}>
-              <div className="flex-1">
-                <div className="mb-1 text-center text-[10px] font-medium text-slate-500">
-                  {stage.label}
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="sticky top-0 z-10 border-b border-slate-800/60 bg-slate-950/85 px-5 py-3 backdrop-blur-md">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <div className="flex items-center gap-4 text-xs text-slate-400">
+            <span className="flex items-center gap-1.5">
+              <ImageIcon className="h-3.5 w-3.5 text-indigo-300" />
+              <b className="text-slate-200">{stats?.total_images ?? 0}</b> images
+            </span>
+            <span className="flex items-center gap-1.5">
+              <FolderOpen className="h-3.5 w-3.5 text-indigo-300" />
+              <b className="text-slate-200">{stats?.total_folders ?? 0}</b> folders
+            </span>
+            <span className="flex items-center gap-1.5">
+              <HardDrive className="h-3.5 w-3.5 text-indigo-300" />
+              {formatBytes(stats?.disk_usage_bytes ?? 0)}
+            </span>
+            {stats?.by_status?.ERROR ? <span className="text-rose-400">{stats.by_status.ERROR} errors</span> : null}
+          </div>
+
+          <div className="flex min-w-[280px] flex-1 items-center gap-2">
+            {stages.map((stage) => (
+              <div key={stage.label} className="flex-1">
+                <div className="mb-1 flex justify-between text-[10px] text-slate-500">
+                  <span>{stage.label}</span>
+                  <span className="font-mono">{stage.pct}%</span>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-slate-800">
+                <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
                   <div
-                    className="h-full rounded-full bg-indigo-500 transition-all duration-500"
+                    className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-400 transition-all duration-500"
                     style={{ width: `${stage.pct}%` }}
                   />
                 </div>
-                <div className="mt-0.5 text-center text-[10px] text-slate-600">
-                  {stage.pct}%
-                </div>
               </div>
-              {i < stages.length - 1 && (
-                <span className="mt-3 text-xs text-slate-600">→</span>
-              )}
-            </React.Fragment>
-          ))}
-        </div>
+            ))}
+          </div>
 
-        {/* Stats and actions row */}
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4 text-xs text-slate-400">
-            {isRunning && progress ? (
+          <div className="flex items-center gap-3 text-xs text-slate-400">
+            {isRunning && progress && (
               <>
                 <span className="flex items-center gap-1">
                   <Zap className="h-3.5 w-3.5 text-amber-400" />
                   {progress.images_per_sec?.toFixed(1) ?? '—'} img/s
                 </span>
                 <span className="flex items-center gap-1">
-                  <Clock className="h-3.5 w-3.5 text-blue-400" />
-                  ~{formatEta(progress.eta_sec)} remaining
+                  <Clock className="h-3.5 w-3.5 text-sky-400" />~{formatEta(progress.eta_sec)}
                 </span>
-                <span className="text-slate-600">
-                  {progress.failed > 0 && (
-                    <span className="text-red-400">{progress.failed} failed</span>
-                  )}
-                </span>
-              </>
-            ) : (
-              <>
-                <span className="flex items-center gap-1">
-                  <ImageIcon className="h-3.5 w-3.5" />
-                  {stats?.total_images ?? 0} images indexed
-                </span>
-                <span className="flex items-center gap-1">
-                  <FolderOpen className="h-3.5 w-3.5" />
-                  across {stats?.total_folders ?? 0} folders
-                </span>
+                {progress.failed > 0 && <span className="text-rose-400">{progress.failed} failed</span>}
               </>
             )}
-          </div>
-
-          <div className="flex items-center gap-2">
             {!isRunning ? (
-              <button
-                onClick={() => startMutation.mutate(false)}
-                disabled={folders.length === 0 || startMutation.isPending}
-                className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-40"
-              >
-                <Play className="h-3.5 w-3.5" />
-                Start
+              <button onClick={() => indexing.start(false)} disabled={!indexing.canStart} className="btn-primary py-1.5">
+                <Play className="h-3.5 w-3.5" /> Start
               </button>
             ) : (
-              <button
-                onClick={() => pauseMutation.mutate()}
-                disabled={pauseMutation.isPending}
-                className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-500 disabled:opacity-40"
-              >
-                <Pause className="h-3.5 w-3.5" />
-                Pause
+              <button onClick={() => (indexing.isPaused ? indexing.resume() : indexing.pause())} className="btn-secondary">
+                {indexing.isPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+                {indexing.isPaused ? 'Resume' : 'Pause'}
               </button>
             )}
-            <button
-              onClick={() => startMutation.mutate(true)}
-              disabled={folders.length === 0 || startMutation.isPending}
-              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-40"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              Re-scan
+            <button onClick={() => indexing.start(true)} disabled={!indexing.canStart || isRunning} className="btn-secondary">
+              <RotateCcw className="h-3.5 w-3.5" /> Re-scan
             </button>
           </div>
         </div>
       </div>
 
-      {/* Image Grid */}
-      <ImageGrid
-        folderId={folderId}
-        selectedImageId={selectedImageId}
-        onSelectImage={onSelectImage}
-      />
+      <ImageGrid folderId={folderId} selectedImageId={selectedImageId} onSelectImage={(img) => onSelectImage(img.image_id)} />
     </div>
   );
 }

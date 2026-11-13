@@ -1,4 +1,6 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { Images } from 'lucide-react';
+import { CenteredSpinner, EmptyState, ErrorState } from './ui/States';
 import { useQuery } from '@tanstack/react-query';
 import { getImages } from '../hooks/useApi';
 import ImageCard from './ImageCard';
@@ -16,8 +18,9 @@ export default function ImageGrid({ folderId, selectedImageId, onSelectImage }: 
   const [offset, setOffset] = useState(0);
 
   // Reset offset when folder changes
+  useEffect(() => setOffset(0), [folderId]);
   const queryFolderId = folderId;
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['images', queryFolderId, offset],
     queryFn: () =>
       getImages({
@@ -41,35 +44,21 @@ export default function ImageGrid({ folderId, selectedImageId, onSelectImage }: 
     setOffset((o) => Math.max(0, o - PAGE_SIZE));
   }, []);
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-1 items-center justify-center py-20">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-600 border-t-indigo-500" />
-      </div>
-    );
-  }
+  if (isLoading) return <CenteredSpinner />;
 
-  if (isError) {
-    return (
-      <div className="flex flex-1 items-center justify-center py-20">
-        <p className="text-sm text-red-400">Failed to load images. Is the backend running?</p>
-      </div>
-    );
-  }
+  if (isError) return <ErrorState error={error} onRetry={() => refetch()} />;
 
   if (images.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center py-20 text-slate-500">
-        <div className="mb-3 text-5xl">📸</div>
-        <p className="text-sm">No images indexed yet.</p>
-        <p className="text-xs text-slate-600">Add a folder and start indexing.</p>
-      </div>
+      <EmptyState icon={<Images className="h-6 w-6" />} title="No images indexed yet">
+        Add a folder in the sidebar and press <b>Index</b>.
+      </EmptyState>
     );
   }
 
   return (
     <div>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4 p-4">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-3 px-5 py-4">
         {images.map((img) => (
           <ImageCard
             key={img.image_id}
