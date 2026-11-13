@@ -123,7 +123,9 @@ class OCREngine:
                 (image_id, result["raw_text"], result["mean_confidence"], result["word_count"]),
             )
             db.execute(
-                "UPDATE images SET status = 'OCR_DONE', updated_at = CURRENT_TIMESTAMP WHERE image_id = ?",
+                # Never demote a COMPLETED image: re-running OCR must not hide it from search.
+                "UPDATE images SET status = 'OCR_DONE', updated_at = CURRENT_TIMESTAMP "
+                "WHERE image_id = ? AND status != 'COMPLETED'",
                 (image_id,),
             )
 
