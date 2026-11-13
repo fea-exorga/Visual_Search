@@ -18,7 +18,8 @@ from ..db.schema import get_db
 from .scanner import scan_directory, validate_and_prepare_image
 from .color_extractor import extract_color_palette, save_color_palette
 from .ocr_engine import get_ocr_engine
-from .embedder import get_embedder
+from ..embeddings import get_encoder
+from ..db.vectors import save_vectors
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +139,7 @@ class IndexWorker:
 
         # 2. Process each image through color → OCR → (batch embed)
         ocr_engine = get_ocr_engine()
-        embedder = get_embedder()
+        embedder = get_encoder()
         batch_size = settings.EMBEDDING_BATCH_SIZE
 
         embed_queue_ids: list[int] = []
@@ -178,6 +179,12 @@ class IndexWorker:
             p.current_stage = "embedding"
             self._emit()
             await self._flush_embeddings(embedder, embed_queue_ids, embed_queue_imgs)
+
+        # 4. Post-index hooks (FAISS rebuild, dedup hashes, …) — best effort
+        p.current_stage = "finalizing"
+        self._emit()
+        from .hooks import run_post_index_hooks
+        await asyncio.to_thread(run_post_index_hooks)
 
         p.current_stage = "done"
         p.is_running = False
@@ -242,8 +249,8 @@ class IndexWorker:
         queue_ids.clear()
         queue_imgs.clear()
 
-        embeddings = await asyncio.to_thread(embedder.embed_batch, imgs)
-        await asyncio.to_thread(embedder.save_embeddings, ids, embeddings)
+        embeddings = await asyncio.to_thread(embedder.encode_images, imgs)
+        await asyncio.to_thread(save_vectors, ids, embeddings, embedder.name)
 
         # Mark each image COMPLETED
         with get_db() as conn:

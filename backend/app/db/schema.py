@@ -90,6 +90,43 @@ CREATE TRIGGER IF NOT EXISTS image_ocr_au AFTER UPDATE ON image_ocr BEGIN
     INSERT INTO image_ocr_fts(rowid, raw_text) VALUES (new.image_id, new.raw_text);
 END;
 
+-- Dense image embeddings (one row per image, L2-normalised float32 blob).
+CREATE TABLE IF NOT EXISTS image_embeddings (
+    image_id    INTEGER PRIMARY KEY REFERENCES images(image_id) ON DELETE CASCADE,
+    model       TEXT    NOT NULL,
+    dim         INTEGER NOT NULL,
+    vector      BLOB    NOT NULL,
+    updated_at  TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- Perceptual hashes for exact / near duplicate detection (Milestone 5).
+CREATE TABLE IF NOT EXISTS image_hashes (
+    image_id    INTEGER PRIMARY KEY REFERENCES images(image_id) ON DELETE CASCADE,
+    phash       TEXT,
+    dhash       TEXT
+);
+
+-- 2D/3D projections + cluster assignment (Milestone 3).
+CREATE TABLE IF NOT EXISTS image_projections (
+    image_id    INTEGER NOT NULL REFERENCES images(image_id) ON DELETE CASCADE,
+    method      TEXT    NOT NULL,   -- 'umap' | 'tsne' | 'pca'
+    dims        INTEGER NOT NULL,   -- 2 | 3
+    x REAL NOT NULL, y REAL NOT NULL, z REAL,
+    cluster_id  INTEGER,
+    PRIMARY KEY (image_id, method, dims)
+);
+
+CREATE TABLE IF NOT EXISTS clusters (
+    cluster_id  INTEGER NOT NULL,
+    method      TEXT    NOT NULL,
+    dims        INTEGER NOT NULL,
+    label       TEXT,
+    size        INTEGER NOT NULL,
+    color       TEXT,
+    cx REAL, cy REAL, cz REAL,
+    PRIMARY KEY (cluster_id, method, dims)
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_images_sha256    ON images(sha256);
 CREATE INDEX IF NOT EXISTS idx_images_folder_id ON images(folder_id);

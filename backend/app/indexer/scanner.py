@@ -101,15 +101,21 @@ def validate_and_prepare_image(file_path: str | Path) -> Tuple[Image.Image, int,
 
 # ── De-duplication by hash ────────────────────────────────────────────
 
-def get_or_link_by_hash(sha256: str, image_id: int) -> int | None:
+def get_or_link_by_hash(sha256: str, image_id: int, conn=None) -> int | None:
     """
     Check whether another image with the same SHA-256 already exists.
 
     If a duplicate is found whose processing is further along, copy its
-    results (colors, OCR, embedding row) to *image_id* and return the
+    results (colors, OCR, embedding vector) to *image_id* and return the
     donor ``image_id``.  Otherwise return ``None``.
+
+    Pass the caller's open ``conn`` when it holds an uncommitted write —
+    opening a second connection would deadlock on SQLite's write lock.
     """
-    with get_db() as conn:
+    if conn is None:
+        with get_db() as own:
+            return get_or_link_by_hash(sha256, image_id, own)
+    if True:
         row = conn.execute(
             """
             SELECT image_id, status, embedding_row_id
@@ -134,8 +140,9 @@ def get_or_link_by_hash(sha256: str, image_id: int) -> int | None:
         donor_id: int = row["image_id"]
         donor_status: str = row["status"]
 
-        # Nothing useful to copy from a PENDING/SCANNING donor
-        if donor_status in ("PENDING", "SCANNING", "ERROR"):
+        # Only a fully processed donor can stand in for this image;
+        # partially processed ones would leave it half-indexed forever.
+        if donor_status != "COMPLETED":
             return None
 
         # Copy color rows
@@ -167,6 +174,15 @@ def get_or_link_by_hash(sha256: str, image_id: int) -> int | None:
                 """,
                 (image_id, ocr["raw_text"], ocr["mean_confidence"], ocr["word_count"]),
             )
+
+        # Copy embedding vector
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO image_embeddings (image_id, model, dim, vector)
+            SELECT ?, model, dim, vector FROM image_embeddings WHERE image_id = ?
+            """,
+            (image_id, donor_id),
+        )
 
         # Link embedding
         embedding_row_id = row["embedding_row_id"]
@@ -321,7 +337,7 @@ def scan_directory(folder_path: str | Path, folder_id: int) -> List[int]:
                 image_id = cur.lastrowid
 
             # Try dedup by hash
-            donor = get_or_link_by_hash(sha256, image_id)
+            donor = get_or_link_by_hash(sha256, image_id, conn)
             if donor is not None:
                 logger.info(
                     "Image %d linked to duplicate donor %d", image_id, donor

@@ -1,0 +1,6 @@
+# Optional heavy backends: VS_EMBED_BACKEND=torch (CLIP/SigLIP via transformers),
+# VS_OCR_ENGINE=easyocr, and fp32 → ONNX re-export.
+torch>=2.2
+transformers>=4.40
+easyocr>=1.7
+onnx>=1.16
