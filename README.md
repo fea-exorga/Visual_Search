@@ -1,113 +1,96 @@
 # 🔍 PixelIndex — Zero-Text Multimodal Desktop Search
 
-**Milestone 1: Local Directory Indexer**
+A local, visual-first "second brain" for messy image folders — lecture screenshots,
+meme dumps, photos — that you search by **vibe**, **rough sketch**, **colour palette**,
+**text inside the image**, or **visual similarity**, and explore as a 2D/3D **embedding galaxy**.
+Everything runs on your machine: no cloud calls at index or query time.
 
-A local image indexing pipeline that scans directories, extracts OCR text, computes dominant color palettes, and generates CLIP/SigLIP vision embeddings — all with zero cloud dependencies.
+> **Organization**: [Reinforce AI/ML Club at Scaler School of Technology](https://github.com/Reinforce-SST/Reinforce_Club-SST) ·
+> **Project**: Zero-Text Multimodal Desktop Search ([idea_84e84c6c](https://www.reinforce-sst.com/dashboard/ideas/idea_84e84c6c)) ·
+> **Docs**: [Technical PRD & plan](docs/PRD.md) · [Benchmarks](docs/BENCHMARKS.md) · [Demo transcript](docs/demo/demo_transcript.md)
 
-> **Organization**: [Reinforce AI/ML Club at Scaler School of Technology](https://github.com/Reinforce-SST/Reinforce_Club-SST)  
-> **Project**: Zero-Text Multimodal Desktop Search ([idea_84e84c6c](https://www.reinforce-sst.com/dashboard/ideas/idea_84e84c6c))
+![Vibe search](docs/demo/real-01-vibe-search.png)
 
-## Architecture
+| Galaxy (UMAP, 19 auto-labelled themes) | Duplicates |
+|---|---|
+| ![Galaxy](docs/demo/real-04-galaxy-2d.png) | ![Duplicates](docs/demo/real-07-duplicates.png) |
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     3-Pane Desktop UI                          │
-│  ┌──────────┐  ┌─────────────────────┐  ┌──────────────────┐  │
-│  │ Sidebar  │  │   Center Canvas     │  │ Inspector Drawer │  │
-│  │ (260px)  │  │   Asset Grid + SSE  │  │ (340px)          │  │
-│  └──────────┘  └─────────────────────┘  └──────────────────┘  │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │ REST + SSE
-┌──────────────────────────▼──────────────────────────────────────┐
-│                    FastAPI Backend                               │
-│  POST /folders │ POST /index/start │ GET /index/stream (SSE)   │
-│  GET /images   │ GET /images/{id}  │ GET /thumbnails/{id}      │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │
-    ┌──────────────────────▼──────────────────────┐
-    │           Indexing Pipeline                  │
-    │  1. File Scan → 2. Color Palette (KMeans)   │
-    │  3. OCR Text (EasyOCR) → 4. Vision Embed    │
-    │        (SigLIP / CLIP)                       │
-    └──────────────────────┬──────────────────────┘
-                           │
-    ┌──────────────────────▼──────────────────────┐
-    │  SQLite (WAL + FTS5)  │  embeddings.npy     │
-    └─────────────────────────────────────────────┘
-```
+Screenshots: real CLIP ViT-B/32 (ONNX int8) over the 3,000-image synthetic "chaos" library.
 
-## Quick Start
+## Milestones
 
-### Backend
+| Label | Milestone | Status |
+|---|---|---|
+| `milestone-1` | Local directory indexer: scan, SHA-256 deltas, KMeans palette, Tesseract/EasyOCR → FTS5, CLIP/SigLIP embeddings | ✅ |
+| `milestone-2` | FAISS vector index + hybrid text / image / upload / sketch / colour / OCR search | ✅ 0.41 ms p50 @ 5k |
+| `milestone-3` | UMAP & t-SNE 2D/3D projection, silhouette-k KMeans, zero-shot cluster names | ✅ purity 0.998 |
+| `milestone-4` | React UI: search + live sketch-pad, 2D canvas / 3D three.js galaxy, duplicates, inspector | ✅ |
+| `milestone-5` | Pipelined indexer, ONNX fp32/fp16/int8, exact+near dedup, chaos dataset, benchmarks, demo | ✅ recall 0.953 |
+
+## Quick start
 
 ```bash
 cd backend
-python -m venv .venv
-source .venv/bin/activate   # or .venv\Scripts\activate on Windows
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+pip install -r requirements.txt          # torch-free; needs the tesseract binary for OCR
+python -m app.embeddings.download        # fetch CLIP ONNX weights (fp32/fp16/int8) into data/models
+uvicorn app.main:app --port 8000
 ```
-
-### Frontend
 
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev                              # http://localhost:5173 (proxies /api → :8000)
 ```
 
-Open http://localhost:5173 — the Vite dev server proxies `/api` to `localhost:8000`.
+Add a folder in the sidebar, press **Index**, then search or open **Galaxy → Compute**.
 
-## Tech Stack
+### Try it on a chaotic library
 
-| Layer | Technology |
-|-------|-----------|
-| File Scanner | `os.scandir()` recursive + SHA-256 delta detection |
-| Color Extraction | scikit-learn `MiniBatchKMeans` (k=5, 64×64 downsample) |
-| OCR Engine | EasyOCR (English, GPU-accelerated) |
-| Vision Embeddings | Google SigLIP (`siglip-base-patch16-224`, 768-d) |
-| Database | SQLite3 (WAL mode) + FTS5 full-text search |
-| API Server | FastAPI + Server-Sent Events (SSE) |
-| Frontend | React 18 + TypeScript + Vite + Tailwind CSS |
+```bash
+python scripts/make_chaos_dataset.py --out data/chaos --n 3000     # slides, memes, code, photos, planted dups
+python scripts/demo.py --dataset data/chaos                         # scripted end-to-end run → docs/demo/
+python scripts/benchmark.py --dataset data/chaos --n 400            # → docs/BENCHMARKS.md
+python scripts/eval_dedup.py                                        # dedup recall vs ground truth
+```
 
-## Project Structure
+### Configuration (environment variables)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `VS_EMBED_BACKEND` | `onnx` | `onnx` (CLIP ViT-B/32, torch-free) · `torch` (any HF CLIP/SigLIP, `pip install -r requirements-torch.txt`) · `fake` (tests) |
+| `VS_ONNX_PRECISION` | `fp32` | `fp32` · `fp16` · `int8` — int8 is ~1.2× faster on CPU but only 58 % top-10 agreement with fp32 |
+| `VS_TORCH_MODEL` | `google/siglip-base-patch16-224` | model for the torch backend |
+| `VS_OCR_ENGINE` | `auto` | `auto` · `tesseract` · `easyocr` · `none` |
+| `VS_BATCH_SIZE` / `VS_INDEX_WORKERS` / `VS_ONNX_THREADS` | 32 / CPUs / CPUs | indexing throughput knobs |
+| `SEARCH_DATA_DIR` | `./data` | SQLite DB, thumbnails, FAISS index, models |
+
+## Architecture
 
 ```
-backend/
-├── app/
-│   ├── config.py              # Settings dataclass & singleton
-│   ├── main.py                # FastAPI app + REST + SSE endpoints
-│   ├── db/
-│   │   └── schema.py          # SQLite schema, WAL, FTS5 triggers
-│   └── indexer/
-│       ├── scanner.py         # os.scandir, SHA-256, delta detection
-│       ├── color_extractor.py # KMeans dominant color palette
-│       ├── ocr_engine.py      # EasyOCR wrapper + FTS5 sync
-│       ├── embedder.py        # SigLIP batched vision embeddings
-│       └── worker.py          # Pipeline orchestrator + progress
-└── requirements.txt
+React + Vite + three.js ──REST/SSE──► FastAPI  /api/v1/{folders,index,images,search,galaxy,duplicates,system}
+                                          │
+  indexer/ (M1, pipelined M5)   search/ (M2)          projection/ (M3)        dedup/ (M5)
+  scan → decode → colour,       FAISS FlatIP/HNSW     PCA → UMAP / t-SNE      SHA-256, pHash,
+  OCR, pHash (thread pool)      + FTS5 BM25           → KMeans (silhouette)   FAISS range search
+  → batched CLIP embed          + Lab palette ΔE      → CLIP zero-shot names  → thumbnail verify
+                                + sketch encoder
+                                          │
+            SQLite (WAL + FTS5): images · image_colors · image_ocr · image_embeddings ·
+                                 image_hashes · image_projections · clusters · galaxy_runs
+```
 
-frontend/
-├── src/
-│   ├── App.tsx                # 3-pane layout root
-│   ├── main.tsx               # React entry point
-│   ├── components/
-│   │   ├── Sidebar.tsx        # Folder list + pipeline settings
-│   │   ├── CenterPanel.tsx    # Progress banner + image grid
-│   │   ├── ImageGrid.tsx      # Paginated responsive grid
-│   │   ├── ImageCard.tsx      # Thumbnail + color bar + OCR badge
-│   │   └── InspectorDrawer.tsx # 4-section feature inspector
-│   ├── hooks/
-│   │   ├── useApi.ts          # REST API wrapper functions
-│   │   └── useSSE.ts          # SSE streaming hook
-│   └── types/
-│       └── index.ts           # TypeScript interfaces
-├── index.html
-├── vite.config.ts
-├── tailwind.config.js
-└── package.json
+**Hybrid ranking**: `score = Σ wₘ·sₘ` over the modes a query uses (semantic cosine min-max
+normalised over candidates, OCR BM25, colour palette similarity in CIE Lab), with weights
+renormalised over active modes. Sketches are encoded with the CLIP image tower (averaged with
+a thickened copy) and their stroke colours feed the colour scorer at reduced weight.
+
+## Tests
+
+```bash
+cd backend && python -m pytest -q        # 65 tests, deterministic fake encoder, ~25 s
+cd frontend && npm run build             # tsc + vite
 ```
 
 ## License
 
-Part of the Reinforce SST research project. See organization for details.
+MIT — part of the Reinforce SST research project.

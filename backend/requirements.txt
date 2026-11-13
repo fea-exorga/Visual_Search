@@ -1,11 +1,24 @@
-fastapi>=0.104.0
-uvicorn[standard]>=0.24.0
-pillow>=10.0.0
-scikit-learn>=1.3.0
-easyocr>=1.7.0
-torch>=2.0.0
-torchvision>=0.15.0
-transformers>=4.35.0
-open-clip-torch>=2.20.0
-watchdog>=3.0.0
-numpy>=1.24.0
+# Core API + indexing
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+pillow>=10.1
+numpy>=1.26
+scikit-learn>=1.4
+
+# Vision-language encoder (default backend: ONNX Runtime, torch-free)
+onnxruntime>=1.17
+tokenizers>=0.15
+huggingface_hub>=0.23
+
+# Vector search, projection, dedup (Milestones 2, 3, 5)
+faiss-cpu>=1.8
+umap-learn>=0.5.5
+imagehash>=4.3
+
+# OCR (Tesseract binary required: apt install tesseract-ocr / brew install tesseract)
+pytesseract>=0.3.10
+
+# Tests
+pytest>=8
+httpx>=0.27

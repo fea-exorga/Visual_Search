@@ -1,14 +1,19 @@
 // ---- Folders ----
+export interface FolderImageCounts {
+  total: number;
+  completed: number;
+  pending: number;
+  error: number;
+}
+
+/** GET /folders row. `enabled` is 0/1 from SQLite (soft-deleted folders have 0). */
 export interface Folder {
   folder_id: number;
   path: string;
-  enabled: boolean;
-  total_images: number;
-  completed: number;
-  pending: number;
-  error_count: number;
+  enabled: boolean | number;
   last_scan_at: string | null;
-  image_count?: number;
+  created_at: string | null;
+  image_counts: FolderImageCounts;
 }
 
 // ---- Colors ----
@@ -42,6 +47,7 @@ export interface ImageSummary {
 
 export interface ImageDetail {
   image_id: number;
+  folder_id?: number;
   file_path: string;
   sha256: string;
   width: number;
@@ -49,7 +55,8 @@ export interface ImageDetail {
   file_size: number;
   format: string;
   status: string;
-  embedding_row_id: number | null;
+  thumbnail_url?: string;
+  has_embedding?: boolean;
   embedding_dim: number | null;
   model_name: string | null;
   l2_norm: number | null;
@@ -79,19 +86,144 @@ export interface Stats {
   disk_usage_bytes: number;
 }
 
+// ---- System ----
+export interface SystemInfo {
+  embed_backend: string;
+  onnx_repo?: string;
+  onnx_precision: string;
+  embedding_dim: number;
+  ocr_engine: string;
+  vector_models: { model: string; count: number }[];
+}
+
 // ---- API responses ----
 export interface ImagesResponse {
   images: ImageSummary[];
   total: number;
+  limit?: number;
+  offset?: number;
 }
 
 export interface StartIndexResponse {
   job_id: string;
 }
 
-export interface AddFolderResponse {
-  folder_id: number;
-  path: string;
-  enabled: boolean;
-  image_count: number;
+export type AddFolderResponse = Omit<Folder, 'image_counts'> & Partial<Pick<Folder, 'image_counts'>>;
+
+// ---- Search (PRD §6.4, M2) ----
+export type ProjectionMethod = 'umap' | 'tsne';
+export type ProjectionDims = 2 | 3;
+
+export interface SearchWeights {
+  semantic?: number;
+  ocr?: number;
+  color?: number;
 }
+
+export interface SearchRequest {
+  text?: string;
+  image_id?: number;
+  sketch_png?: string;
+  colors?: string[];
+  ocr?: string;
+  cluster_ids?: number[];
+  folder_id?: number;
+  projection?: { method: ProjectionMethod; dims: ProjectionDims };
+  k?: number;
+  weights?: SearchWeights;
+}
+
+export interface SearchScores {
+  semantic?: number | null;
+  ocr?: number | null;
+  color?: number | null;
+}
+
+export interface SearchHit {
+  image_id: number;
+  score: number;
+  scores: SearchScores;
+  file_path: string;
+  thumbnail_url: string;
+  width: number;
+  height: number;
+  colors: ColorSwatch[];
+  ocr_snippet: string | null;
+  cluster_id?: number | null;
+}
+
+export interface SearchResponse {
+  results: SearchHit[];
+  took_ms: number;
+  faiss_ms: number;
+  modes: string[];
+  total_candidates: number;
+}
+
+export interface RebuildResponse {
+  n_vectors: number;
+  index_type: string;
+  build_ms: number;
+}
+
+// ---- Galaxy (PRD §6.4, M3) ----
+export interface GalaxyPoint {
+  image_id: number;
+  x: number;
+  y: number;
+  z?: number | null;
+  cluster_id: number;
+}
+
+export interface GalaxyCluster {
+  cluster_id: number;
+  label: string;
+  size: number;
+  color: string;
+  centroid: number[];
+}
+
+export interface GalaxyResponse {
+  method: ProjectionMethod;
+  dims: ProjectionDims;
+  points: GalaxyPoint[];
+  clusters: GalaxyCluster[];
+  computed_at: string | number | null;
+  /** Optional: true when images were indexed after the projection was computed. */
+  stale?: boolean;
+}
+
+export interface GalaxyComputeRequest {
+  method: ProjectionMethod;
+  dims: ProjectionDims;
+  n_neighbors?: number;
+  min_dist?: number;
+  perplexity?: number;
+  n_clusters?: number;
+}
+
+// ---- Duplicates (PRD §6.4, M5) ----
+export interface DuplicateImage {
+  image_id: number;
+  file_path: string;
+  thumbnail_url: string;
+  file_size: number;
+  width: number;
+  height: number;
+  similarity: number;
+}
+
+export interface DuplicateGroup {
+  group_id: number;
+  kind: 'exact' | 'near';
+  images: DuplicateImage[];
+}
+
+export interface DuplicatesResponse {
+  groups: DuplicateGroup[];
+  n_groups: number;
+  n_images: number;
+}
+
+// ---- App navigation ----
+export type ViewName = 'search' | 'galaxy' | 'duplicates' | 'library';

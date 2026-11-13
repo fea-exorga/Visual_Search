@@ -1,146 +1,152 @@
-"""OCR text extraction wrapper using EasyOCR."""
+"""OCR text extraction with pluggable backends (Tesseract / EasyOCR).
+
+``Settings.OCR_ENGINE``:
+  * ``auto``      — Tesseract if the binary is present, else EasyOCR, else none
+  * ``tesseract`` — pytesseract (fast on CPU, no model download)
+  * ``easyocr``   — EasyOCR (needs torch; GPU accelerated when available)
+  * ``none``      — skip OCR
+"""
+
+from __future__ import annotations
 
 import logging
+import os
 import re
+import shutil
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
 from ..config import get_settings
 from ..db.schema import get_db
 
 logger = logging.getLogger(__name__)
 
+_EMPTY = {"raw_text": "", "mean_confidence": 0.0, "word_count": 0}
+_MAX_SIDE = 1600  # downscale huge screenshots before OCR
+_TESSERACT_TIMEOUT_S = 30  # one pathological image must not stall indexing
+
+# Tesseract's OpenMP threads oversubscribe the CPU when several OCR calls run
+# in parallel (the indexer's thread pool); one thread per call is fastest.
+os.environ.setdefault("OMP_THREAD_LIMIT", "1")
+
+
+def _normalise(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
 
 class OCREngine:
-    """EasyOCR-based text extraction with lazy initialization and singleton reader."""
+    """Lazy, backend-agnostic OCR wrapper."""
 
-    _reader = None  # Class-level singleton to avoid re-initialization
+    def __init__(self, engine: str | None = None) -> None:
+        requested = (engine or get_settings().OCR_ENGINE).lower()
+        self.engine = self._resolve(requested)
+        self._reader = None
+        logger.info("OCR engine: %s (requested %s)", self.engine, requested)
 
-    def __init__(self, engine: str = "easyocr", gpu: bool = True) -> None:
-        self._engine = engine
-        self._gpu = gpu
-        self._available = True
+    @staticmethod
+    def _resolve(requested: str) -> str:
+        if requested in ("tesseract", "auto") and shutil.which("tesseract"):
+            try:
+                import pytesseract  # noqa: F401
+                return "tesseract"
+            except ImportError:
+                pass
+        if requested in ("easyocr", "auto"):
+            try:
+                import easyocr  # noqa: F401
+                return "easyocr"
+            except Exception:
+                pass
+        return "none"
 
-    def _ensure_reader(self):
-        """Lazy-load the EasyOCR Reader on first use."""
-        if OCREngine._reader is not None:
-            return
-        try:
+    # ── backends ──────────────────────────────────────────────────────
+    def _tesseract(self, img: Image.Image, threshold: float) -> dict:
+        import pytesseract
+
+        gray = ImageOps.grayscale(img)
+        data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT, config="--psm 3",
+                                         timeout=_TESSERACT_TIMEOUT_S)
+        words, confs = [], []
+        for text, conf in zip(data["text"], data["conf"]):
+            conf = float(conf)
+            text = text.strip()
+            if text and conf >= 0 and conf / 100.0 >= threshold and re.search(r"\w", text):
+                words.append(text)
+                confs.append(conf / 100.0)
+        raw = _normalise(" ".join(words))
+        return {
+            "raw_text": raw,
+            "mean_confidence": round(float(np.mean(confs)), 4) if confs else 0.0,
+            "word_count": len(raw.split()) if raw else 0,
+        }
+
+    def _easyocr(self, img: Image.Image, threshold: float) -> dict:
+        if self._reader is None:
             import easyocr
-            OCREngine._reader = easyocr.Reader(["en"], gpu=self._gpu)
-            logger.info("EasyOCR reader initialized (gpu=%s)", self._gpu)
-        except Exception as exc:
-            logger.warning("EasyOCR not available, OCR disabled: %s", exc)
-            self._available = False
+            try:
+                import torch
+                gpu = torch.cuda.is_available()
+            except ImportError:
+                gpu = False
+            self._reader = easyocr.Reader(["en"], gpu=gpu)
+        results = [r for r in self._reader.readtext(np.array(img)) if r[2] >= threshold]
+        if not results:
+            return dict(_EMPTY)
+        results.sort(key=lambda r: (r[0][0][1], r[0][0][0]))
+        raw = _normalise(" ".join(t for _, t, _ in results))
+        return {
+            "raw_text": raw,
+            "mean_confidence": round(sum(c for *_, c in results) / len(results), 4),
+            "word_count": len(raw.split()) if raw else 0,
+        }
 
+    # ── public ────────────────────────────────────────────────────────
     def extract_text(self, image: Image.Image) -> dict:
-        """
-        Extract text from a PIL Image.
-
-        Returns:
-            Dict with raw_text, mean_confidence, and word_count.
-        """
-        empty = {"raw_text": "", "mean_confidence": 0.0, "word_count": 0}
-
+        if self.engine == "none":
+            return dict(_EMPTY)
         try:
-            self._ensure_reader()
-            if not self._available or OCREngine._reader is None:
-                return empty
-
-            settings = get_settings()
-            img_array = np.array(image.convert("RGB"))
-
-            # Run EasyOCR
-            results = OCREngine._reader.readtext(img_array)
-
-            # Filter by confidence threshold
-            threshold = settings.OCR_CONFIDENCE_THRESHOLD
-            filtered = [
-                (bbox, text, conf)
-                for bbox, text, conf in results
-                if conf >= threshold
-            ]
-
-            if not filtered:
-                return empty
-
-            # Sort by reading order: y (top-to-bottom) then x (left-to-right)
-            # bbox[0] is the top-left corner [x, y]
-            filtered.sort(key=lambda r: (r[0][0][1], r[0][0][0]))
-
-            # Concatenate text blocks
-            raw_text = " ".join(text for _, text, _ in filtered)
-
-            # Normalize whitespace
-            raw_text = re.sub(r"\s+", " ", raw_text).strip()
-
-            # Compute mean confidence
-            mean_conf = sum(conf for _, _, conf in filtered) / len(filtered)
-
-            # Word count
-            word_count = len(raw_text.split()) if raw_text else 0
-
-            return {
-                "raw_text": raw_text,
-                "mean_confidence": round(mean_conf, 4),
-                "word_count": word_count,
-            }
-
+            img = image.convert("RGB")
+            if max(img.size) > _MAX_SIDE:
+                img.thumbnail((_MAX_SIDE, _MAX_SIDE))
+            threshold = get_settings().OCR_CONFIDENCE_THRESHOLD
+            if self.engine == "tesseract":
+                return self._tesseract(img, threshold)
+            return self._easyocr(img, threshold)
         except Exception as exc:
-            logger.error("OCR extraction failed: %s", exc, exc_info=True)
-            return empty
+            logger.error("OCR extraction failed: %s", exc)
+            return dict(_EMPTY)
 
     def save_ocr_result(self, image_id: int, result: dict) -> None:
-        """
-        Persist OCR result to the database, update FTS5 index, mark OCR_DONE.
-
-        Args:
-            image_id: Primary key of the image row.
-            result: Output of extract_text().
-        """
+        """Persist OCR text (FTS5 kept in sync by triggers) and mark OCR_DONE."""
         with get_db() as db:
             db.execute(
                 """
-                INSERT OR REPLACE INTO image_ocr
-                    (image_id, raw_text, mean_confidence, word_count)
+                INSERT INTO image_ocr (image_id, raw_text, mean_confidence, word_count)
                 VALUES (?, ?, ?, ?)
+                ON CONFLICT(image_id) DO UPDATE SET raw_text=excluded.raw_text,
+                    mean_confidence=excluded.mean_confidence, word_count=excluded.word_count
                 """,
-                (
-                    image_id,
-                    result["raw_text"],
-                    result["mean_confidence"],
-                    result["word_count"],
-                ),
+                (image_id, result["raw_text"], result["mean_confidence"], result["word_count"]),
             )
-
-            # Update FTS5 index — delete old entry then insert new
             db.execute(
-                "DELETE FROM image_ocr_fts WHERE rowid = ?",
-                (image_id,),
-            )
-            if result["raw_text"]:
-                db.execute(
-                    "INSERT INTO image_ocr_fts (rowid, raw_text) VALUES (?, ?)",
-                    (image_id, result["raw_text"]),
-                )
-
-            db.execute(
-                "UPDATE images SET status = 'OCR_DONE', updated_at = CURRENT_TIMESTAMP WHERE image_id = ?",
+                # Never demote a COMPLETED image: re-running OCR must not hide it from search.
+                "UPDATE images SET status = 'OCR_DONE', updated_at = CURRENT_TIMESTAMP "
+                "WHERE image_id = ? AND status != 'COMPLETED'",
                 (image_id,),
             )
 
-
-# ---------------------------------------------------------------------------
-# Module-level singleton
-# ---------------------------------------------------------------------------
 
 _ocr_engine: OCREngine | None = None
 
 
 def get_ocr_engine() -> OCREngine:
-    """Return the module-level OCREngine singleton."""
     global _ocr_engine
     if _ocr_engine is None:
         _ocr_engine = OCREngine()
     return _ocr_engine
+
+
+def reset_ocr_engine() -> None:
+    global _ocr_engine
+    _ocr_engine = None

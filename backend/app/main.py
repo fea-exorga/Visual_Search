@@ -46,6 +46,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Feature routers (one module per milestone) ───────────────────────
+from .api import dedup as _dedup_api  # noqa: E402  Milestone 5
+from .api import galaxy as _galaxy_api  # noqa: E402  Milestone 3
+from .api import search as _search_api  # noqa: E402  Milestone 2
+from .api import system as _system_api  # noqa: E402
+
+for _r in (_search_api.router, _galaxy_api.router, _dedup_api.router, _system_api.router):
+    app.include_router(_r, prefix="/api/v1")
+
 # ── Pydantic models ──────────────────────────────────────────────────
 
 
@@ -344,12 +353,13 @@ def get_image_detail(image_id: int):
         img["ocr"] = dict(ocr) if ocr else None
 
         # Embedding info
-        settings = get_settings()
-        has_emb = img.get("embedding_row_id") is not None
-        img["has_embedding"] = has_emb
-        img["embedding_dim"] = settings.EMBEDDING_DIM if has_emb else None
-        img["model_name"] = "google/siglip-base-patch16-224" if has_emb else None
-        img["l2_norm"] = 1.0 if has_emb else None
+        emb = conn.execute(
+            "SELECT model, dim FROM image_embeddings WHERE image_id = ?", (image_id,)
+        ).fetchone()
+        img["has_embedding"] = emb is not None
+        img["embedding_dim"] = emb["dim"] if emb else None
+        img["model_name"] = emb["model"] if emb else None
+        img["l2_norm"] = 1.0 if emb else None
         img["thumbnail_url"] = f"/api/v1/thumbnails/{image_id}"
 
     return img
