@@ -244,3 +244,12 @@ def test_faiss_latency_5k_p50_under_1ms():
     p50 = float(np.median(timings))
     print(f"FAISS 5k x 512-d top-60 p50 = {p50:.3f} ms, p95 = {np.percentile(timings, 95):.3f} ms")
     assert p50 < 1.0
+
+
+def test_filter_only_query_browses_folder(indexed_client):
+    folders = indexed_client.get("/api/v1/folders").json()
+    r = indexed_client.post("/api/v1/search", json={"folder_id": folders[0]["folder_id"], "k": 100})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["modes"] == ["browse"]
+    assert len(body["results"]) == len(indexed_client.dataset)

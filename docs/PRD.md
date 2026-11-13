@@ -143,6 +143,7 @@ POST /search                    (M2)
           projection?: {method, dims}, k?: int = 60,
           weights?: { semantic?: float, ocr?: float, color?: float } }
   → { results: [SearchHit], took_ms: float, faiss_ms: float, modes: [str], total_candidates: int }
+  A filter-only body (just cluster_ids and/or folder_id) is a "browse" query: modes == ["browse"].
 
 SearchHit = { image_id, score, scores: {semantic?, ocr?, color?}, file_path,
               thumbnail_url, width, height, colors: [ColorSwatch], ocr_snippet, cluster_id? }
@@ -153,7 +154,8 @@ POST /search/rebuild                                                (M2) → { n
 
 GET  /galaxy?method=umap|tsne&dims=2|3                               (M3)
   → { method, dims, points: [{image_id, x, y, z?, cluster_id}],
-      clusters: [{cluster_id, label, size, color, centroid: [x, y, z?]}], computed_at }
+      clusters: [{cluster_id, label, size, color, centroid: [x, y, z?]}], computed_at,
+      stale: bool }   # stale = library changed since computed_at
   404 if not computed yet.
 POST /galaxy/compute  body {method="umap", dims=2, n_neighbors?, min_dist?, perplexity?, n_clusters?}
   → same payload as GET (synchronous; fast enough for ~10k points)

@@ -109,6 +109,8 @@ def hybrid_search(
         color_top = [int(palettes.ids[i]) for i in np.argsort(-col)[:n_cand] if col[i] > 0]
 
     candidates = (set(sem_raw) | set(ocr_scores) | set(color_top)) - exclude
+    if modes == ["browse"]:
+        candidates = (allowed or set()) - exclude
 
     # Fill in semantic scores for candidates found only by OCR / colour.
     if index is not None and query_vec is not None:
@@ -130,7 +132,7 @@ def hybrid_search(
             parts["ocr"] = ocr_scores.get(iid, 0.0)
         if "color" in weights:
             parts["color"] = color_scores.get(iid, 0.0)
-        score = sum(weights[m] * s for m, s in parts.items())
+        score = sum(weights[m] * s for m, s in parts.items()) if parts else 1.0
         fused.append((score, sem_raw.get(iid, 0.0), iid, parts))
     fused.sort(key=lambda t: (-t[0], -t[1], t[2]))
 
@@ -176,6 +178,8 @@ def _parse_query(
         sketch_colors = [QuerySwatch(s.rgb, s.weight * SKETCH_COLOR_FACTOR) for s in sketch_colors]
     if (req.ocr or "").strip():
         modes.append("ocr")
+    if not modes and (req.cluster_ids or req.folder_id is not None):
+        modes.append("browse")  # filter-only query: list the cluster / folder
     if not modes:
         raise ValueError("empty query: provide text, image_id, sketch_png, colors, ocr or an uploaded file")
     return modes, vectors, swatches + sketch_colors, bool(sketch_colors) and not swatches
